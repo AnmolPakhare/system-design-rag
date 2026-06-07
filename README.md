@@ -62,6 +62,23 @@ python src/ingest.py --reset    # wipe vector store and re-embed
 python src/ingest.py --reclone  # delete + re-clone repos, then index
 ```
 
+### Deep dive: external reference links
+
+The tutorials' "further reading" sections link out to papers, engineering blogs
+and docs (e.g. the **GFS**, **MapReduce**, **Spanner**, **Dynamo** papers). To
+pull that content into the knowledge base too — not just the link text — crawl
+the external links and ingest the fetched HTML/PDF text into the same store:
+
+```powershell
+python src/ingest_web.py                 # crawl all content links
+python src/ingest_web.py --limit 20       # quick test on the first 20 links
+python src/ingest_web.py --workers 12      # more concurrent fetches
+```
+
+It fetches each link, extracts readable text (HTML via BeautifulSoup, PDFs via
+pypdf), skips media/login-walled hosts, then chunks and embeds the result.
+Resumable: already-embedded chunks are skipped on re-runs.
+
 ## Ask questions
 
 ```powershell
@@ -87,6 +104,9 @@ system-design-rag/
     ├── embeddings.py     # pluggable retrieval backend (local | gemini)
     ├── chunker.py        # heading-aware, section-packing markdown chunking
     ├── ingest.py         # clone -> chunk -> embed -> store (resumable)
+    ├── links.py          # extract external reference URLs from the tutorials
+    ├── fetch_web.py      # fetch + extract text from HTML/PDF links
+    ├── ingest_web.py     # crawl external links -> chunk -> embed (resumable)
     ├── rag.py            # retrieve + generate
     └── chat.py           # CLI / REPL
 ```
