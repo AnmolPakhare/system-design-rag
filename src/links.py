@@ -33,6 +33,19 @@ SKIP_EXT = (
     ".css", ".js", ".ico", ".mp4", ".zip",
 )
 
+# Links back into the tutorials' own GitHub repos (and translation forks) just
+# re-ingest, as noisy HTML, content we already have as clean markdown. Skip them.
+SELF_REPO_SUBSTR = (
+    "github.com/donnemartin/system-design-primer",
+    "system-design-primer",            # catches translation/mirror forks
+    "github.com/karanpratapsingh/system-design",
+)
+
+
+def is_self_repo(url: str) -> bool:
+    low = url.lower()
+    return "github.com" in low and any(s in low for s in SELF_REPO_SUBSTR)
+
 
 def _clean(url: str) -> str:
     # Strip trailing markdown/sentence punctuation that the regex may capture.
@@ -52,6 +65,8 @@ def extract_links() -> Dict[str, List[str]]:
                 if any(s in low for s in SKIP_DOMAIN_SUBSTR):
                     continue
                 if low.endswith(SKIP_EXT):
+                    continue
+                if is_self_repo(url):
                     continue
                 urls.setdefault(url, [])
                 if repo["name"] not in urls[url]:

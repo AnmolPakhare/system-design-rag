@@ -57,17 +57,18 @@ def embed_query(text: str) -> List[float]:
     return _embed([text], task_type="RETRIEVAL_QUERY")[0]
 
 
-def generate(prompt: str, max_retries: int = 7) -> str:
-    """Generate an answer with the chat model.
+def generate(prompt: str, model: str = GEMINI_MODEL, max_retries: int = 7) -> str:
+    """Generate text with a Gemini model (defaults to the configured chat model).
 
     Retries 429 (rate limit) and 503 (transient 'high demand') errors,
-    honouring a server retry delay when one is provided.
+    honouring a server retry delay when one is provided. Pass a different
+    `model` (e.g. "gemini-2.5-pro") to use it as an evaluation judge.
     """
     delay = 3.0
     for attempt in range(max_retries):
         try:
             resp = _client.models.generate_content(
-                model=GEMINI_MODEL,
+                model=model,
                 contents=prompt,
             )
             return resp.text or ""

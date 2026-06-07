@@ -8,10 +8,16 @@ from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
 import chromadb
+import numpy as np
 
 from config import CHROMA_DIR, COLLECTION_NAME, TOP_K
 from embeddings import embed_query
 from gemini_client import generate
+
+# Retrieval diversification (added after judge feedback flagged redundant context).
+CANDIDATE_MULTIPLIER = 5    # fetch this many * top_k candidates, then diversify
+DUP_COSINE_THRESHOLD = 0.92  # drop a candidate this similar to one already kept
+MAX_PER_SOURCE = 2          # at most this many chunks from the same file/url
 
 # A conversation turn: (user_question, assistant_answer).
 Turn = Tuple[str, str]
@@ -73,16 +79,57 @@ def _get_collection():
     return client.get_collection(COLLECTION_NAME)
 
 
+def _cosine(a: np.ndarray, b: np.ndarray) -> float:
+    return float(a @ b / ((np.linalg.norm(a) * np.linalg.norm(b)) + 1e-9))
+
+
 def retrieve(question: str, top_k: int = TOP_K):
+    """Retrieve top_k chunks, diversified to avoid near-duplicate context.
+
+    Fetches a larger candidate pool (already ranked by similarity), then greedily
+    keeps candidates that are not near-duplicates of ones already kept and caps
+    how many come from any single source file/URL. This removes the redundant
+    context the judge flagged without losing relevance.
+    """
     collection = _get_collection()
     q_vec = embed_query(question)
-    res = collection.query(query_embeddings=[q_vec], n_results=top_k)
+    pool = max(top_k * CANDIDATE_MULTIPLIER, top_k)
+    res = collection.query(
+        query_embeddings=[q_vec],
+        n_results=pool,
+        include=["documents", "metadatas", "embeddings"],
+    )
     docs = res["documents"][0]
     metas = res["metadatas"][0]
-    return docs, metas
+    embs = [np.asarray(e, dtype=float) for e in res["embeddings"][0]]
+
+    kept, kept_embs, per_source = [], [], {}
+    for i in range(len(docs)):
+        src = metas[i].get("path", "")
+        if per_source.get(src, 0) >= MAX_PER_SOURCE:
+            continue
+        if any(_cosine(embs[i], ke) >= DUP_COSINE_THRESHOLD for ke in kept_embs):
+            continue
+        kept.append(i)
+        kept_embs.append(embs[i])
+        per_source[src] = per_source.get(src, 0) + 1
+        if len(kept) >= top_k:
+            break
+
+    # Backfill from the pool if diversification filtered out too much.
+    if len(kept) < top_k:
+        for i in range(len(docs)):
+            if i not in kept:
+                kept.append(i)
+                if len(kept) >= top_k:
+                    break
+
+    return [docs[i] for i in kept], [metas[i] for i in kept]
 
 
-def answer(question: str, history: Optional[List[Turn]] = None, top_k: int = TOP_K):
+def run(question: str, history: Optional[List[Turn]] = None, top_k: int = TOP_K) -> dict:
+    """Full RAG pass. Returns the answer plus the retrieval internals so callers
+    (e.g. the evaluation judge) can inspect the context that grounded it."""
     history = history or []
 
     # 1) Resolve references against history so retrieval has a standalone query.
@@ -108,4 +155,17 @@ def answer(question: str, history: Optional[List[Turn]] = None, top_k: int = TOP
     )
     text = generate(prompt)
     sources = [Source(m["source"], m["path"], m["heading"]) for m in metas]
-    return text, sources
+    return {
+        "question": question,
+        "search_query": search_query,
+        "answer": text,
+        "sources": sources,
+        "context": context,
+        "docs": docs,
+        "metas": metas,
+    }
+
+
+def answer(question: str, history: Optional[List[Turn]] = None, top_k: int = TOP_K):
+    result = run(question, history, top_k)
+    return result["answer"], result["sources"]

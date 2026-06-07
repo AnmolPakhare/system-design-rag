@@ -6,4 +6,5 @@ __pycache__/
 data/repos/
 data/chroma/
 data/*.log
+data/*.json
 .idea/

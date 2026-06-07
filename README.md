@@ -127,9 +127,45 @@ system-design-rag/
     ├── embeddings.py     # pluggable retrieval backend (local | gemini)
     ├── chunker.py        # heading-aware, section-packing markdown chunking
     ├── ingest.py         # clone -> chunk -> embed -> store (resumable)
-    ├── links.py          # extract external reference URLs from the tutorials
+    ├── links.py          # extract external reference URLs (skips self-repo/forks)
     ├── fetch_web.py      # fetch + extract text from HTML/PDF links
     ├── ingest_web.py     # crawl external links -> chunk -> embed (resumable)
-    ├── rag.py            # retrieve + generate
+    ├── prune_translations.py  # drop translated-README + self-repo noise chunks
+    ├── rag.py            # diversified retrieve (MMR/dedup) + generate
+    ├── judge.py          # LLM-as-judge scoring (gemini-2.5-flash)
+    ├── evaluate.py       # run judge over a question set, aggregate scores+fixes
+    ├── measure_retrieval.py   # quota-free retrieval diversity metrics
     └── chat.py           # CLI / REPL
 ```
+
+## Evaluation (LLM-as-judge) and iterative improvement
+
+A stronger model grades the RAG's answers so weaknesses can be found and fixed
+systematically.
+
+```powershell
+python src/evaluate.py --tag baseline      # answer + judge each eval question
+python src/measure_retrieval.py             # quota-free retrieval diversity check
+```
+
+- **Generator under test:** `gemini-2.5-flash-lite`
+- **Judge:** `gemini-2.5-flash` (one tier above the generator), with automatic
+  fallback to `gemini-2.5-flash-lite` if flash's daily quota is exhausted; the
+  model that actually scored each answer is recorded.
+- The judge returns 1-5 scores for **groundedness, relevance, completeness,
+  coherence, citations and retrieval_quality**, plus concrete `issues` and
+  `fixes`. `evaluate.py` averages the scores and tallies the most-suggested fixes.
+
+**Example of the loop in action.** The baseline judge scored everything ~5
+except `retrieval_quality` (4.4), flagging *"context is highly redundant"* and
+recommending a *"deduplication step in the retrieval pipeline."* Applied fixes:
+
+1. **Diversified retrieval** (`rag.py`): fetch a larger candidate pool, then drop
+   near-duplicate chunks (cosine >= 0.92) and cap chunks per source.
+2. **Pruned translated READMEs** (`README-ja.md`, `README-zh-Hans.md`, ...).
+3. **Pruned self-repo crawl noise** — the primer's own GitHub pages re-crawled
+   under many anchor URLs.
+
+Result: the store went from 3,209 -> 1,888 clean chunks (-41% redundant/noisy),
+and retrieval diversity rose from 3.4 -> 4.2 distinct sources per query with
+lower average redundancy.

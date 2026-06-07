@@ -125,12 +125,24 @@ def chunk_file(file_path: Path, repo_name: str, repo_root: Path) -> List[Chunk]:
     return chunks
 
 
+def is_translated_readme(name: str) -> bool:
+    """True for localized READMEs like README-ja.md, README-zh-Hans.md.
+
+    These duplicate the English README in other languages and only add redundant,
+    non-English chunks to the index (flagged as low-quality context by the judge).
+    The canonical English README.md (no language suffix) is kept.
+    """
+    return name.lower().startswith("readme-") and name.lower().endswith(".md")
+
+
 def load_repo_chunks(repo_root: Path, repo_name: str) -> List[Chunk]:
     """Walk every markdown file in a repo (all sub-documents / sublinks)."""
     chunks: List[Chunk] = []
     for md in sorted(repo_root.rglob("*.md")):
-        # Skip non-content noise.
+        # Skip non-content noise and non-English translated READMEs.
         if any(part in {".git", "node_modules"} for part in md.parts):
+            continue
+        if is_translated_readme(md.name):
             continue
         chunks.extend(chunk_file(md, repo_name, repo_root))
     return chunks
