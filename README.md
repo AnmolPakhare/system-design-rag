@@ -89,6 +89,26 @@ python src/chat.py "Compare SQL vs NoSQL for a feed"  # one-shot
 Every answer is grounded in retrieved excerpts and lists the source files it
 drew from.
 
+### Conversational memory
+
+The REPL **remembers the conversation**, so follow-ups that refer back to
+earlier turns work:
+
+```
+you> Explain the Google File System architecture
+you> what about its fault tolerance?      # "its" resolves to GFS
+you> reset                                 # clear the conversation
+```
+
+Recent user turns are folded into the retrieval query (a free, no-LLM heuristic)
+so references like "its"/"that" still fetch the right material, and the recent
+history is passed to the generator for continuity — all while keeping each turn
+to a single Gemini generation call.
+
+> **Free-tier note:** this key allows ~20 `gemini-2.5-flash` generations/day.
+> Retrieval/embeddings are local and unlimited; only the final answer step uses
+> the daily generate quota, which resets each day.
+
 ## Project layout
 
 ```
