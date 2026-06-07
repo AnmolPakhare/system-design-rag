@@ -23,7 +23,8 @@ git clone repos ─► chunk every .md (heading-aware) ─► Gemini embeddings
     no API quota). Used so ingestion isn't blocked by free-tier limits.
   - `gemini` — `gemini-embedding-001` via the API (subject to free-tier
     100 req/min and daily caps; the ingester paces and resumes automatically).
-- **Generation:** `gemini-2.5-flash` (always Gemini)
+- **Generation:** `gemini-2.5-flash-lite` (always Gemini; set `GEMINI_MODEL` to
+  use a different one, e.g. `gemini-2.5-flash`)
 - **Vector store:** Chroma (persisted under `data/chroma/`)
 - **Chunking:** splits each markdown file at its headings, then *packs*
   consecutive small sections up to ~4 KB (windowing anything larger with
@@ -42,7 +43,7 @@ The Gemini API key lives in `.env` (already populated):
 
 ```
 GEMINI_API_KEY=...
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-2.5-flash-lite   # lower-tier model w/ higher free daily quota
 EMBEDDING_PROVIDER=local          # "local" (default) or "gemini"
 EMBEDDING_MODEL=gemini-embedding-001
 ```
@@ -105,9 +106,11 @@ so references like "its"/"that" still fetch the right material, and the recent
 history is passed to the generator for continuity — all while keeping each turn
 to a single Gemini generation call.
 
-> **Free-tier note:** this key allows ~20 `gemini-2.5-flash` generations/day.
-> Retrieval/embeddings are local and unlimited; only the final answer step uses
-> the daily generate quota, which resets each day.
+> **Free-tier note:** generation uses the daily free-tier quota for the chosen
+> model (lower-tier models like `gemini-2.5-flash-lite` get a higher daily
+> allowance than `gemini-2.5-flash`). Retrieval/embeddings are local and
+> unlimited; only the final answer step counts against the quota, which resets
+> daily. Switch models anytime via `GEMINI_MODEL` in `.env`.
 
 ## Project layout
 
